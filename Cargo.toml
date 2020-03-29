@@ -15,7 +15,9 @@ thiserror = "1.0.13"
 pretty_env_logger = "0.4.0"
 base64 = "0.12.0"
 structopt = "0.3.12"
+openssl = { version = "0.10", features = ["vendored"] }
 
 [profile.release]
 lto = "fat"
 codegen-units = 1
+

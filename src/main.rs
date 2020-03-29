@@ -12,8 +12,6 @@ use std::net::SocketAddr;
 use structopt::StructOpt;
 use tokio::macros::support::Poll;
 
-const PATH: &str = "/skin/";
-
 #[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("{0}")]
@@ -91,11 +89,11 @@ struct SkinService {
 impl SkinService {
     async fn call_async(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
         let path = req.uri().path();
-        if !path.starts_with(PATH) {
+        if !path.starts_with(&self.path) {
             return Ok(Self::not_found());
         }
 
-        let nickname = &path[PATH.len()..];
+        let nickname = &path[self.path.len()..];
         let uuid = self.get_uuid(nickname).await?;
 
         let skin = if let Some(uuid) = uuid {
