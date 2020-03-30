@@ -1,20 +1,30 @@
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use tokio::time::{delay_for, Duration};
 
-pub struct Ratelimit((Sender<()>, Receiver<()>));
-
-impl Ratelimit {
-    pub async fn wait(&self) {
-        let (tx, rx) = &self.0;
-        if rx.try_recv().is_err() {
-            delay_for(Duration::from_secs(30)).await;
-            let _ = tx.send(());
-        }
-    }
+pub struct RateLimit {
+    counter: Arc<AtomicU64>,
+    limit: u64,
 }
 
-impl Default for Ratelimit {
-    fn default() -> Self {
-        Self(channel())
+impl RateLimit {
+    pub fn new(limit: u64) -> Self {
+        Self {
+            counter: Arc::new(AtomicU64::new(0)),
+            limit,
+        }
+    }
+
+    pub async fn wait(&self) {
+        let limit = self.limit;
+        let counter = Arc::clone(&self.counter);
+        let seconds = counter.fetch_add(limit, Ordering::SeqCst);
+        delay_for(Duration::from_secs(seconds)).await;
+        actix_rt::spawn(async move {
+            delay_for(Duration::from_secs(limit)).await;
+            counter.fetch_sub(limit, Ordering::SeqCst);
+        })
     }
 }

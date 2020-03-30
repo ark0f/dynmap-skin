@@ -2,7 +2,7 @@ mod api;
 mod error;
 mod ratelimit;
 
-use crate::{api::ApiClient, error::Error, ratelimit::Ratelimit};
+use crate::{api::ApiClient, error::Error, ratelimit::RateLimit};
 use actix_web::{
     get,
     middleware::{Compress, Logger},
@@ -10,7 +10,7 @@ use actix_web::{
     web::{Data, Path},
     App, Error as ActixError, HttpResponse, HttpServer,
 };
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, sync::Arc};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -19,11 +19,13 @@ struct Args {
     address: SocketAddr,
     #[structopt(short, default_value = "/skin")]
     path: String,
+    #[structopt(short, default_value = "30")]
+    rate_limit: u64,
 }
 
 struct State {
     client: ApiClient,
-    ratelimit: Ratelimit,
+    rate_limit: Arc<RateLimit>,
 }
 
 #[get("/{playername}")]
@@ -32,7 +34,7 @@ async fn get_skin(
     playername: Path<String>,
 ) -> Result<HttpResponse, ActixError> {
     let client = &state.client;
-    state.ratelimit.wait().await;
+    state.rate_limit.wait().await;
 
     let uuids = client
         .uuids_by_playernames(&[playername.into_inner()])
@@ -65,16 +67,22 @@ async fn main() -> io::Result<()> {
     dotenv::dotenv().ok();
     pretty_env_logger::init();
 
-    let Args { address, path } = Args::from_args();
+    let Args {
+        address,
+        path,
+        rate_limit,
+    } = Args::from_args();
+
+    let rate_limit = Arc::new(RateLimit::new(rate_limit));
 
     HttpServer::new(move || {
         App::new()
-            .wrap(Logger::default())
-            .wrap(Compress::default())
             .data(State {
                 client: ApiClient::default(),
-                ratelimit: Ratelimit::default(),
+                rate_limit: rate_limit.clone(),
             })
+            .wrap(Logger::default())
+            .wrap(Compress::default())
             .service(web::scope(&path).service(get_skin))
     })
     .bind(address)?
