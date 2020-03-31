@@ -12,7 +12,7 @@ pub struct RateLimit {
 impl RateLimit {
     pub fn new(limit: u64) -> Self {
         Self {
-            counter: Arc::new(AtomicU64::new(0)),
+            counter: Arc::default(),
             limit,
         }
     }
@@ -20,11 +20,12 @@ impl RateLimit {
     pub async fn wait(&self) {
         let limit = self.limit;
         let counter = Arc::clone(&self.counter);
-        let seconds = counter.fetch_add(limit, Ordering::SeqCst);
+        let seconds = counter.fetch_add(limit, Ordering::AcqRel);
+
         delay_for(Duration::from_secs(seconds)).await;
-        actix_rt::spawn(async move {
-            delay_for(Duration::from_secs(limit)).await;
-            counter.fetch_sub(limit, Ordering::SeqCst);
-        })
+
+        if seconds != 0 {
+            counter.fetch_sub(limit, Ordering::AcqRel);
+        }
     }
 }
